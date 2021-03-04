@@ -1,0 +1,22 @@
+---
+
+- hosts: all
+  gather_facts: false
+  vars:
+  tasks:
+    - name: Run test
+      win_shell: |
+        write-output "Running test: {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }}" | Out-file -FilePath "$env:Temp\technique_output.txt"
+        IEX (IWR 'https://raw.githubusercontent.com/clr2of8/invoke-atomicredteam/master/install-atomicredteam.ps1' -UseBasicParsing);
+        Install-AtomicRedTeam -RepoOwner "clr2of8" -getAtomics -Force
+
+        # T1053.005 (scheduled task example)
+        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -cleanup
+
+        Remove-Item c:\AtomicRedTeam -Recurse -Force
+      register: script_result
+
+    - name: Result
+      debug:
+        msg:
+          - "{{ script_result }}"
