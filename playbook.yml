@@ -21,9 +21,10 @@
         Install-AtomicRedTeam -RepoOwner "clr2of8" -getAtomics -Force
 
         # T1053.005 (scheduled task example)
-        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -ExecutionLogPath 'C:\AtomicRedTeam\results.csv' -cleanup
+        Remove-Item "$env:Temp\results.csv" -Recurse -Force
+        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -ExecutionLogPath '$env:Temp\results.csv' -cleanup
 
-        Import-Csv C:\AtomicRedTeam\results.csv | % { 
+        Import-Csv "$env:Temp\results.csv" | % { 
             $_ | add-member -NotePropertyName "RequestID" -NotePropertyValue $requestid
             $event = @{ 
                 source = $source
