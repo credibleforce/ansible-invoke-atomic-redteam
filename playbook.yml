@@ -6,35 +6,67 @@
   tasks:
     - name: Run test
       win_shell: |
+        if (-not ([System.Management.Automation.PSTypeName]'ServerCertificateValidationCallback').Type)
+        {
+        $certCallback = @"
+            using System;
+            using System.Net;
+            using System.Net.Security;
+            using System.Security.Cryptography.X509Certificates;
+            public class ServerCertificateValidationCallback
+            {
+                public static void Ignore()
+                {
+                    if(ServicePointManager.ServerCertificateValidationCallback ==null)
+                    {
+                        ServicePointManager.ServerCertificateValidationCallback += 
+                            delegate
+                            (
+                                Object obj, 
+                                X509Certificate certificate, 
+                                X509Chain chain, 
+                                SslPolicyErrors errors
+                            )
+                            {
+                                return true;
+                            };
+                    }
+                }
+            }
+        "@
+            Add-Type $certCallback
+        }
+
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;
+        [ServerCertificateValidationCallback]::Ignore()
 
         $sourcetype = "_json"
         $source = "splunk:redteam"
         $requestid = "{{ request_id }}"
-        $sourcetype = "_json"
-        $source = "splunk:redteam"
         $url = "{{ splunk_hec_url }}/services/collector/event"
         $header = @{Authorization = "Splunk {{ splunk_hec_token }}"}
-        
         write-output "RequestID={{ request_id }} Running test: {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }}" | Out-file -FilePath "$env:Temp\technique_output.txt"
         IEX (IWR 'https://raw.githubusercontent.com/clr2of8/invoke-atomicredteam/master/install-atomicredteam.ps1' -UseBasicParsing);
         Install-AtomicRedTeam -RepoOwner "clr2of8" -getAtomics -Force
 
         # T1053.005 (scheduled task example)
-        Remove-Item "$env:Temp\results.csv" -Recurse -Force
-        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -ExecutionLogPath '$env:Temp\results.csv' -cleanup
+        Remove-Item c:\results.csv -Recurse -Force -ErrorAction SilentlyContinue
+        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -ExecutionLogPath c:\results.csv
 
-        Import-Csv "$env:Temp\results.csv" | % { 
+        Import-Csv 'c:\results.csv' | % {
             $_ | add-member -NotePropertyName "RequestID" -NotePropertyValue $requestid
-            $event = @{ 
+            $event = @{
                 source = $source
                 sourcetype = $sourcetype
-                event = $_ 
+                event = $_
             } | ConvertTo-Json -Compress
             $result = Invoke-RestMethod -Method Post -Uri $url -Headers $header -Body $event
         }
 
-        Remove-Item c:\AtomicRedTeam -Recurse -Force
+        Start-Sleep -Seconds 30
+
+        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -cleanup
+        Remove-Item c:\AtomicRedTeam -Recurse -Force -ErrorAction SilentlyContinue
       register: script_result
 
     - name: Result
