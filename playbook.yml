@@ -6,12 +6,32 @@
   tasks:
     - name: Run test
       win_shell: |
-        write-output "Running test: {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }}" | Out-file -FilePath "$env:Temp\technique_output.txt"
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;
+
+        $sourcetype = "_json"
+        $source = "splunk:redteam"
+        $requestid = "{{ request_id }}"
+        $sourcetype = "_json"
+        $source = "splunk:redteam"
+        $url = "{{ splunk_hec_url }}/services/collector/event"
+        $header = @{Authorization = "Splunk {{ splunk_hec_token }}"}
+        
+        write-output "RequestID={{ request_id }} Running test: {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }}" | Out-file -FilePath "$env:Temp\technique_output.txt"
         IEX (IWR 'https://raw.githubusercontent.com/clr2of8/invoke-atomicredteam/master/install-atomicredteam.ps1' -UseBasicParsing);
         Install-AtomicRedTeam -RepoOwner "clr2of8" -getAtomics -Force
 
         # T1053.005 (scheduled task example)
-        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -cleanup
+        Invoke-AtomicTest {{ technique_id }} {{ ("-TestNumbers " + (technique_test_numbers|string)) if (technique_test_numbers is defined) and (technique_test_numbers|string != "0") else "" }} -ExecutionLogPath 'C:\AtomicRedTeam\results.csv' -cleanup
+
+        Import-Csv C:\AtomicRedTeam\results.csv | % { 
+            $_ | add-member -NotePropertyName "RequestID" -NotePropertyValue $requestid
+            $event = @{ 
+                source = $source
+                sourcetype = $sourcetype
+                event = $_ 
+            } | ConvertTo-Json -Compress
+            $result = Invoke-RestMethod -Method Post -Uri $url -Headers $header -Body $event
+        }
 
         Remove-Item c:\AtomicRedTeam -Recurse -Force
       register: script_result
